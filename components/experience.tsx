@@ -1,167 +1,61 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
-import { AnimatePresence, motion, useInView, useMotionValueEvent, useScroll, useTransform } from "framer-motion"
-import { ArrowDown, ArrowLeft, ArrowRight } from "lucide-react"
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useScroll,
+  useTransform,
+  type MotionValue,
+} from "framer-motion"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery"
+import { TopoField } from "@/components/ui/topo-field"
 import { Lightbox } from "@/components/lightbox"
+import { SketchfabCamera, CALIBRATION } from "@/components/sketchfab-camera"
+import { Shutter, Flash } from "@/components/shutter"
+import { setScrollLocked } from "@/components/smooth-scroll"
 import { CAMERAS, type CameraId } from "@/lib/photos"
 import { SITE } from "@/lib/site"
-import type { Phase } from "@/components/scene/camera-stage"
-
-const CameraStage = dynamic(() => import("@/components/scene/camera-stage"), { ssr: false })
 
 const EASE = [0.2, 0.7, 0.2, 1] as const
-
-// ------------------------------------------------------------------ intro pieces
-
-/** An aperture that opens on load: black frame, octagonal hole growing and twisting. */
-function Iris() {
-  const stops = ["f/22", "f/16", "f/11", "f/8", "f/5.6", "f/4", "f/2.8", "f/1.4"]
-  const [k, setK] = React.useState(0)
-  React.useEffect(() => {
-    const id = window.setInterval(() => setK((v) => Math.min(v + 1, stops.length - 1)), 140)
-    return () => window.clearInterval(id)
-  }, [stops.length])
-  const oct = Array.from({ length: 8 }, (_, i) => {
-    const a = (i / 8) * Math.PI * 2 + Math.PI / 8
-    return `${(Math.cos(a) * 10).toFixed(2)},${(Math.sin(a) * 10).toFixed(2)}`
-  }).join(" ")
-  return (
-    <motion.div
-      className="pointer-events-none fixed inset-0 z-[80]"
-      initial={{ opacity: 1 }}
-      animate={{ opacity: 0 }}
-      transition={{ delay: 1.9, duration: 0.5 }}
-    >
-      <svg className="h-full w-full" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden>
-        <defs>
-          <mask id="iris-mask">
-            <rect x="-100" y="-100" width="200" height="200" fill="white" />
-            <motion.polygon
-              points={oct}
-              fill="black"
-              initial={{ scale: 0, rotate: -40 }}
-              animate={{ scale: 9, rotate: 30 }}
-              transition={{ delay: 0.55, duration: 1.5, ease: [0.7, 0, 0.2, 1] }}
-            />
-          </mask>
-        </defs>
-        <rect x="-100" y="-100" width="200" height="200" fill="#070707" mask="url(#iris-mask)" />
-        <motion.polygon
-          points={oct}
-          fill="none"
-          stroke="rgba(255,255,255,.25)"
-          strokeWidth={0.15}
-          initial={{ scale: 0, rotate: -40 }}
-          animate={{ scale: 9, rotate: 30 }}
-          transition={{ delay: 0.55, duration: 1.5, ease: [0.7, 0, 0.2, 1] }}
-        />
-      </svg>
-      <motion.p
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 font-mono text-xs tracking-[0.4em] text-white/70"
-        initial={{ opacity: 1 }}
-        animate={{ opacity: 0 }}
-        transition={{ delay: 1.3, duration: 0.4 }}
-      >
-        {stops[k]}
-      </motion.p>
-    </motion.div>
-  )
+const IDS: CameraId[] = ["sony", "nikon"]
+const UIDS: Record<CameraId, string> = {
+  sony: "aa7ecf6efe144d1d9898a0ae294e0722",
+  nikon: "7793688671a64b5fbeac5a57543fad3d",
 }
+const INDEX: Record<CameraId, string> = { sony: "Body 01", nikon: "Body 02" }
 
-function Timecode() {
-  const ref = React.useRef<HTMLSpanElement>(null)
+type Phase = "loading" | "idle" | "focusing" | "gallery" | "returning"
+
+function useIsNarrow() {
+  const [narrow, setNarrow] = React.useState(false)
   React.useEffect(() => {
-    const t0 = performance.now()
-    let raf = 0
-    const tick = () => {
-      const s = (performance.now() - t0) / 1000
-      const ff = Math.floor((s % 1) * 24)
-      const ss = Math.floor(s) % 60
-      const mm = Math.floor(s / 60) % 60
-      if (ref.current)
-        ref.current.textContent = `00:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const mq = window.matchMedia("(max-width: 767px)")
+    const on = () => setNarrow(mq.matches)
+    on()
+    mq.addEventListener("change", on)
+    return () => mq.removeEventListener("change", on)
   }, [])
-  return <span ref={ref}>00:00:00:00</span>
+  return narrow
 }
 
-function Corner({ className }: { className: string }) {
-  return <span className={"absolute size-7 border-white/50 sm:size-10 " + className} />
-}
-
-/** Viewfinder overlay: corner brackets, REC, exposure readouts and a light meter. */
-function Hud({ caption }: { caption: string }) {
+/** Letters rise out of a mask one by one. */
+function Rise({ text, show, delay = 0, className }: { text: string; show: boolean; delay?: number; className?: string }) {
   return (
-    <motion.div
-      className="pointer-events-none absolute inset-3 z-20 font-mono text-[10px] uppercase tracking-[0.2em] text-white/70 sm:inset-6 sm:text-[11px]"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: 1.2, duration: 0.8 }}
-    >
-      <Corner className="left-0 top-0 border-l-2 border-t-2" />
-      <Corner className="right-0 top-0 border-r-2 border-t-2" />
-      <Corner className="bottom-0 left-0 border-b-2 border-l-2" />
-      <Corner className="bottom-0 right-0 border-b-2 border-r-2" />
-      <div className="absolute left-5 top-4 flex items-center gap-2 sm:left-8 sm:top-6">
-        <span className="size-2 animate-pulse rounded-full bg-red-500 shadow-[0_0_10px_#ef4444]" />
-        <span className="text-white">REC</span>
-        <span className="hidden sm:inline">
-          <Timecode />
-        </span>
-      </div>
-      <div className="absolute right-5 top-4 flex items-center gap-3 sm:right-8 sm:top-6">
-        <span className="hidden sm:inline">RAW+JPG</span>
-        <span className="flex items-center gap-1">
-          <span className="relative inline-block h-2.5 w-5 rounded-[2px] border border-white/70 after:absolute after:-right-[3px] after:top-[2px] after:h-1 after:w-[2px] after:bg-white/70">
-            <span className="absolute inset-[1px] w-[70%] bg-white/80" />
-          </span>
-          <span>[{SITE.shots}]</span>
-        </span>
-      </div>
-      <div className="absolute bottom-4 left-5 flex gap-3 sm:bottom-6 sm:left-8 sm:gap-5">
-        <span className="text-white">1/250</span>
-        <span>F2.8</span>
-        <span>ISO 100</span>
-        <span className="hidden sm:inline">AF-C</span>
-      </div>
-      <div className="absolute bottom-4 right-5 hidden items-center gap-1 sm:bottom-6 sm:right-8 sm:flex">
-        <span>-2</span>
-        <span className="relative mx-1 flex h-3 items-end gap-[5px]">
-          {Array.from({ length: 9 }, (_, i) => (
-            <span key={i} className={"w-px bg-white/60 " + (i % 2 ? "h-1.5" : "h-3")} />
-          ))}
-          <motion.span
-            className="absolute -top-2 h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-amber-400"
-            animate={{ left: ["10%", "62%", "44%", "50%"] }}
-            transition={{ delay: 1.6, duration: 2.4, ease: "easeInOut" }}
-          />
-        </span>
-        <span>+2</span>
-      </div>
-      <div className="absolute left-1/2 top-4 -translate-x-1/2 text-white/60 sm:top-6">{caption}</div>
-    </motion.div>
-  )
-}
-
-function SplitName({ text, delay, className }: { text: string; delay: number; className?: string }) {
-  return (
-    <span className={"inline-flex overflow-hidden pb-[0.08em] " + (className ?? "")} aria-label={text}>
+    <span className={"inline-flex overflow-hidden " + (className ?? "")} aria-label={text}>
       {Array.from(text).map((ch, i) => (
         <motion.span
           key={i}
           aria-hidden
           className="inline-block"
-          initial={{ y: "105%", opacity: 0, filter: "blur(14px)" }}
-          animate={{ y: "0%", opacity: 1, filter: "blur(0px)" }}
-          transition={{ delay: delay + i * 0.045, duration: 0.95, ease: EASE }}
+          initial={{ y: "110%" }}
+          animate={show ? { y: "0%" } : { y: "110%" }}
+          transition={{ delay: delay + i * 0.035, duration: 0.9, ease: [0.7, 0, 0.1, 1] }}
         >
           {ch === " " ? " " : ch}
         </motion.span>
@@ -170,59 +64,131 @@ function SplitName({ text, delay, className }: { text: string; delay: number; cl
   )
 }
 
-// ------------------------------------------------------------------ chooser labels
+// ------------------------------------------------------------------ one camera frame
 
-function CameraLabel({
+function CameraFrame({
   id,
-  visible,
+  layout,
+  phase,
+  selected,
+  choosing,
+  scrollP,
+  focus,
+  introAt,
+  onReady,
   onPick,
 }: {
   id: CameraId
-  visible: boolean
+  layout: Record<string, string>
+  phase: Phase
+  selected: CameraId | null
+  choosing: boolean
+  scrollP: MotionValue<number>
+  focus: MotionValue<number>
+  introAt: number | null
+  onReady: () => void
   onPick: (id: CameraId) => void
 }) {
   const c = CAMERAS[id]
+  const isSel = selected === id
+  const isOther = selected !== null && !isSel
+  const full = isSel && (phase === "focusing" || phase === "gallery")
+  const target = full ? { left: "0%", top: "0%", width: "100%", height: "100%" } : layout
+  const canPick = phase === "idle" && choosing
+  const visible = introAt !== null
+
   return (
     <motion.div
-      className="w-[min(78vw,280px)] text-center"
-      animate={{ opacity: visible ? 1 : 0, y: visible ? 0 : 16 }}
-      transition={{ duration: 0.5, ease: EASE }}
-      style={{ pointerEvents: visible ? "auto" : "none" }}
+      className="absolute"
+      style={{ zIndex: full ? 40 : 5 }}
+      initial={false}
+      animate={{ ...target, opacity: isOther ? 0 : visible ? 1 : 0 }}
+      transition={{ duration: full || isOther ? 1.1 : 0.9, ease: [0.7, 0, 0.2, 1] }}
     >
-      <p className="font-mono text-[10px] uppercase tracking-[0.3em]" style={{ color: c.accent }}>
-        {id === "sony" ? "Body 01 · now" : "Body 02 · since 2011"}
-      </p>
-      <h3 className="font-display mt-1 text-3xl leading-none text-white sm:text-4xl">{c.name}</h3>
-      <p className="mt-2 hidden font-mono text-[10px] uppercase tracking-[0.16em] text-white/55 sm:block">{c.tagline}</p>
-      <Button
-        size="sm"
-        className="mt-3 rounded-none px-4 font-mono font-bold text-[11px] uppercase tracking-[0.18em] text-black hover:brightness-110"
-        style={{ background: c.accent }}
-        onClick={() => onPick(id)}
-      >
-        Look through it <ArrowRight />
-      </Button>
+      <SketchfabCamera
+        uid={UIDS[id]}
+        title={`${c.name}, 3D model`}
+        calib={CALIBRATION[id]}
+        progress={scrollP}
+        focus={focus}
+        introAt={introAt}
+        onReady={onReady}
+      />
+
+      {/* viewfinder corners, always faintly there; they snap in when choosable */}
+      {!full ? (
+        <div className="pointer-events-none absolute inset-3">
+          {(["left-0 top-0 border-l border-t", "right-0 top-0 border-r border-t", "left-0 bottom-0 border-l border-b", "right-0 bottom-0 border-r border-b"] as const).map((k) => (
+            <span
+              key={k}
+              className={
+                "absolute size-5 transition-all duration-500 " +
+                (canPick ? "border-signal/70 " : "border-paper/15 ") +
+                k
+              }
+            />
+          ))}
+          <span className="label absolute left-3 top-2 text-[9px] text-paper/40">
+            {INDEX[id]} · {c.short}
+          </span>
+        </div>
+      ) : null}
+
+      <AnimatePresence>
+        {canPick ? (
+          <motion.div
+            className="absolute inset-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45 }}
+          >
+            <button
+              type="button"
+              aria-label={`Look through the ${c.name}`}
+              data-cursor="Enter"
+              onClick={() => onPick(id)}
+              className="group absolute inset-0 cursor-pointer outline-none"
+            >
+              <span className="absolute inset-3 border border-signal/0 transition duration-500 group-hover:border-signal/40 group-focus-visible:border-signal" />
+            </button>
+            <div className="pointer-events-none absolute inset-x-0 bottom-[5%] flex flex-col items-center text-center">
+              <p className="label text-signal">{INDEX[id]}</p>
+              <h3 className="font-display mt-2 text-[clamp(2.4rem,4.6vw,4.4rem)] text-paper">{c.name}</h3>
+              <p className="label mt-2 hidden text-paper/45 sm:block">{c.specs.join("  /  ")}</p>
+              <Button
+                size="sm"
+                onClick={() => onPick(id)}
+                className="label pointer-events-auto mt-4 h-9 rounded-none bg-signal px-5 text-ink hover:bg-paper"
+              >
+                Look through it <ArrowUpRight />
+              </Button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </motion.div>
   )
 }
 
-// ------------------------------------------------------------------ the gallery "inside" the screen
+// ------------------------------------------------------------------ inside the screen
 
 function Gallery({ id, onBack }: { id: CameraId; onBack: () => void }) {
   const c = CAMERAS[id]
   const [lb, setLb] = React.useState<number | null>(null)
   const [frontIdx, setFrontIdx] = React.useState(0)
   const [step, setStep] = React.useState({ n: 0, d: 0 })
+  const [titled, setTitled] = React.useState(false)
   const items = React.useMemo<GalleryItem[]>(
-    () =>
-      c.photos.map((p) => ({
-        common: p.title,
-        binomial: p.exif ?? "",
-        photo: { url: p.thumb, text: p.title, by: c.name },
-      })),
+    () => c.photos.map((p) => ({ common: p.title, binomial: p.exif ?? "", photo: { url: p.thumb, text: p.title, by: c.name } })),
     [c],
   )
   const front = c.photos[frontIdx]
+
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setTitled(true), 1900)
+    return () => window.clearTimeout(t)
+  }, [])
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -235,265 +201,297 @@ function Gallery({ id, onBack }: { id: CameraId; onBack: () => void }) {
   const nudge = (d: number) => setStep((s) => ({ n: s.n + 1, d }))
 
   return (
-    <motion.div
-      key={id}
-      className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black text-white"
-      style={{ "--acc": c.accent } as React.CSSProperties}
-      initial={{ clipPath: "inset(18% 22% 18% 22%)", opacity: 0 }}
-      animate={{ clipPath: "inset(0% 0% 0% 0%)", opacity: 1 }}
-      exit={{ clipPath: "inset(18% 22% 18% 22%)", opacity: 0 }}
-      transition={{ duration: 0.75, ease: [0.7, 0, 0.2, 1] }}
-    >
-      {/* raw grid */}
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.05)_1px,transparent_1px)] bg-[size:80px_80px]" />
-      {/* giant body name behind the ring */}
-      <motion.p
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 select-none whitespace-nowrap text-center text-[22vw] font-black uppercase leading-none tracking-[-0.06em] text-transparent [-webkit-text-stroke:1px_rgba(255,255,255,.14)]"
-        initial={{ x: "8%", opacity: 0 }}
-        animate={{ x: "0%", opacity: 1 }}
-        transition={{ delay: 0.3, duration: 1.2, ease: EASE }}
-      >
-        {c.short}
-      </motion.p>
+    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-ink text-paper" data-lenis-prevent>
+      <TopoField opacity={0.1} highlight={-1} annotations={false} speed={0.6} seed={id === "sony" ? 3 : 11} />
 
-      {/* top bar */}
-      <div className="relative z-10 flex items-stretch border-b border-white/20">
+      <div className="relative z-10 flex h-16 items-center justify-between border-b border-hair px-4 sm:px-8">
         <button
           type="button"
           onClick={onBack}
-          className="flex cursor-pointer items-center gap-3 px-5 py-4 font-mono text-xs font-bold uppercase tracking-[0.2em] text-black transition-[filter] hover:brightness-110 sm:px-7"
-          style={{ background: c.accent }}
+          data-cursor="Back"
+          className="label group flex cursor-pointer items-center gap-3 text-paper/70 transition hover:text-signal"
         >
-          <ArrowLeft className="size-4" /> Back <span className="hidden opacity-60 sm:inline">/ Esc</span>
+          <ArrowLeft className="size-4 transition group-hover:-translate-x-1" /> Back to bodies
         </button>
-        <div className="flex flex-1 items-center justify-between gap-4 px-5 font-mono text-[10px] uppercase tracking-[0.25em] text-white/60 sm:px-7">
-          <span className="hidden sm:inline">Playback // {c.name}</span>
-          <span className="sm:hidden">{c.short}</span>
-          <span className="text-white">
-            {String(frontIdx + 1).padStart(2, "0")} / {String(c.photos.length).padStart(2, "0")}
-          </span>
-        </div>
+        <p className="label hidden text-paper/40 md:block">
+          {INDEX[id]} — {c.name} — Playback
+        </p>
+        <p className="label tabular-nums text-paper/70">
+          <span className="text-signal">{String(frontIdx + 1).padStart(2, "0")}</span> / {String(c.photos.length).padStart(2, "0")}
+        </p>
       </div>
 
-      {/* ring */}
-      <div className="relative z-10 min-h-0 flex-1">
-        <CircularGallery items={items} accent={c.accent} onItemClick={setLb} onFrontChange={setFrontIdx} step={step} autoFocus />
-      </div>
+      <motion.div
+        className="relative z-10 min-h-0 flex-1"
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: titled ? 1 : 0, scale: titled ? 1 : 0.92 }}
+        transition={{ duration: 1.1, ease: EASE }}
+      >
+        <CircularGallery items={items} accent="#c6ff3d" onItemClick={setLb} onFrontChange={setFrontIdx} step={step} />
+      </motion.div>
 
-      {/* bottom bar */}
-      <div className="relative z-10 grid grid-cols-[auto_1fr_auto] items-stretch border-t border-white/20">
-        <button type="button" aria-label="Previous photo" onClick={() => nudge(-1)} className="cursor-pointer border-r border-white/20 px-5 transition hover:bg-white hover:text-black sm:px-7">
+      <AnimatePresence>
+        {!titled ? (
+          <motion.div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center px-6 text-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -30 }}
+            transition={{ duration: 0.6 }}
+          >
+            <p className="label text-signal">{INDEX[id]} — {c.photos.length} frames</p>
+            <h2 className="font-display mt-4 text-[clamp(4rem,16vw,15rem)]">
+              <Rise text={c.short} show delay={0.1} />
+            </h2>
+            <p className="label mt-4 text-paper/50">{c.specs.join("  /  ")}</p>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <div className="relative z-10 grid grid-cols-[auto_1fr_auto] items-stretch border-t border-hair">
+        <button type="button" aria-label="Previous frame" onClick={() => nudge(-1)} className="cursor-pointer border-r border-hair px-5 text-paper/60 transition hover:bg-signal hover:text-ink sm:px-8">
           <ArrowLeft className="size-5" />
         </button>
-        <button type="button" onClick={() => setLb(frontIdx)} className="group min-w-0 cursor-zoom-in px-5 py-4 text-left sm:px-7">
-          <p className="truncate text-[clamp(1.4rem,4vw,3rem)] font-black uppercase leading-none tracking-[-0.04em]">{front?.title}</p>
-          <p className="mt-2 flex flex-wrap gap-x-4 font-mono text-[10px] uppercase tracking-[0.2em] text-white/50">
+        <button type="button" onClick={() => setLb(frontIdx)} data-cursor="Open" className="group min-w-0 cursor-zoom-in px-5 py-4 text-left sm:px-8">
+          <p className="font-display truncate text-[clamp(1.6rem,3.6vw,3rem)]">{front?.title}</p>
+          <p className="label mt-2 flex flex-wrap gap-x-5 text-paper/45">
             <span>{front?.exif ?? "exif stripped"}</span>
-            <span className="text-[var(--acc)] group-hover:underline">Click to open fullscreen ↗</span>
-            <span className="hidden md:inline">Drag / scroll / ← → to rotate</span>
+            <span className="text-signal group-hover:underline">Open full frame ↗</span>
+            <span className="hidden md:inline">Drag · scroll · ← → to rotate</span>
           </p>
         </button>
-        <button type="button" aria-label="Next photo" onClick={() => nudge(1)} className="cursor-pointer border-l border-white/20 px-5 transition hover:bg-white hover:text-black sm:px-7">
+        <button type="button" aria-label="Next frame" onClick={() => nudge(1)} className="cursor-pointer border-l border-hair px-5 text-paper/60 transition hover:bg-signal hover:text-ink sm:px-8">
           <ArrowRight className="size-5" />
         </button>
       </div>
 
-      <Lightbox photos={c.photos} index={lb} onIndex={setLb} accent={c.accent} label={c.name} />
-    </motion.div>
+      <Lightbox photos={c.photos} index={lb} onIndex={setLb} label={`${INDEX[id]} — ${c.name}`} />
+    </div>
   )
 }
 
-// ------------------------------------------------------------------ the whole opening act
+// ------------------------------------------------------------------ opening act
 
 export function Experience() {
   const section = React.useRef<HTMLElement>(null)
-  const sticky = React.useRef<HTMLDivElement>(null)
-  const [startedAt] = React.useState(() => (typeof performance !== "undefined" ? performance.now() : 0))
-  const [phase, setPhase] = React.useState<Phase>("idle")
+  const narrow = useIsNarrow()
+  const [phase, setPhase] = React.useState<Phase>("loading")
   const [selected, setSelected] = React.useState<CameraId | null>(null)
+  const [shutterOpen, setShutterOpen] = React.useState(false)
+  const [flash, setFlash] = React.useState(0)
+  const [revealedAt, setRevealedAt] = React.useState<number | null>(null)
+  const [ready, setReady] = React.useState<Record<CameraId, number | null>>({ sony: null, nikon: null })
   const [choosing, setChoosing] = React.useState(false)
-  const labelRefs = React.useRef<Record<CameraId, HTMLDivElement | null>>({ sony: null, nikon: null })
-  const inView = useInView(sticky, { margin: "0px 0px -5% 0px" })
+  const [count, setCount] = React.useState(0)
+  const focus = useMotionValue(0)
+  const afterClose = React.useRef<null | (() => void)>(null)
 
   const { scrollYProgress } = useScroll({ target: section, offset: ["start start", "end end"] })
-  const camP = useTransform(scrollYProgress, [0.1, 0.5], [0, 1], { clamp: true })
-  const nameOpacity = useTransform(scrollYProgress, [0.04, 0.26], [1, 0])
-  const nameY = useTransform(scrollYProgress, [0.04, 0.3], [0, -120])
-  const nameBlur = useTransform(scrollYProgress, [0.04, 0.26], ["blur(0px)", "blur(12px)"])
-  const pickOpacity = useTransform(scrollYProgress, [0.38, 0.52], [0, 1])
-  const pickY = useTransform(scrollYProgress, [0.38, 0.52], [30, 0])
-  const cueOpacity = useTransform(scrollYProgress, [0, 0.06], [1, 0])
+  const scrollP = useTransform(scrollYProgress, [0.08, 0.5], [0, 1], { clamp: true })
+  const nameY = useTransform(scrollYProgress, [0.02, 0.3], ["0%", "60%"])
+  const nameOpacity = useTransform(scrollYProgress, [0.08, 0.28], [1, 0])
+  const topOpacity = useTransform(scrollYProgress, [0.02, 0.16], [1, 0])
+  const frameScale = useTransform(scrollYProgress, [0.08, 0.5], [1, 1.08])
+  const frameY = useTransform(scrollYProgress, [0.08, 0.5], ["0%", "6%"])
+  const pickOpacity = useTransform(scrollYProgress, [0.38, 0.5], [0, 1])
+  useMotionValueEvent(scrollYProgress, "change", (v) => setChoosing(v > 0.4))
 
-  useMotionValueEvent(scrollYProgress, "change", (v) => setChoosing(v > 0.42))
-
-  // Keep the page still while the camera turns and while you're "inside" it.
+  // Preloader counter (honest: tracks the two models, eases toward the next milestone).
+  const loaded = (ready.sony ? 1 : 0) + (ready.nikon ? 1 : 0)
   React.useEffect(() => {
-    const el = document.documentElement
-    if (phase !== "idle") el.style.overflow = "hidden"
-    else el.style.overflow = ""
-    return () => {
-      el.style.overflow = ""
-    }
+    if (phase !== "loading") return
+    const cap = loaded === 2 ? 100 : loaded === 1 ? 82 : 64
+    const id = window.setInterval(() => setCount((c) => (c < cap ? c + Math.max(1, Math.round((cap - c) / 12)) : c)), 60)
+    return () => window.clearInterval(id)
+  }, [phase, loaded])
+
+  const markReady = React.useCallback((id: CameraId) => setReady((r) => (r[id] ? r : { ...r, [id]: performance.now() })), [])
+  React.useEffect(() => {
+    if (phase !== "loading") return
+    const both = ready.sony !== null && ready.nikon !== null
+    const t = window.setTimeout(
+      () => {
+        setCount(100)
+        setFlash((f) => f + 1)
+        setShutterOpen(true)
+        setRevealedAt(performance.now())
+        setPhase("idle")
+      },
+      both ? 900 : 7000,
+    )
+    return () => window.clearTimeout(t)
+  }, [phase, ready])
+
+  const introAt = (id: CameraId) => {
+    const r = ready[id]
+    if (revealedAt === null || r === null) return null
+    return Math.max(revealedAt + 700 + (id === "nikon" ? 250 : 0), r + 200)
+  }
+
+  React.useEffect(() => {
+    setScrollLocked(!(phase === "idle" || phase === "loading"))
   }, [phase])
+  React.useEffect(() => () => setScrollLocked(false), [])
 
   const pick = React.useCallback(
     (id: CameraId) => {
       if (phase !== "idle") return
       setSelected(id)
       setPhase("focusing")
+      animate(focus, 1, { duration: 3.2, ease: "linear", delay: 0.35 }).then(() => {
+        afterClose.current = () => setPhase("gallery")
+        setShutterOpen(false)
+      })
     },
-    [phase],
+    [phase, focus],
   )
-  const back = React.useCallback(() => setPhase("returning"), [])
-  const onFocused = React.useCallback(() => setPhase("gallery"), [])
-  const onReturned = React.useCallback(() => {
-    setPhase("idle")
-    setSelected(null)
-  }, [])
 
-  const labelsVisible = choosing && phase === "idle"
-  const caption = phase === "idle" ? (choosing ? "SELECT BODY" : "STANDBY") : phase === "gallery" ? "PLAYBACK" : "FOCUSING"
+  const back = React.useCallback(() => {
+    afterClose.current = () => {
+      setPhase("returning")
+      animate(focus, 0, { duration: 2.6, ease: "linear", delay: 0.5 }).then(() => {
+        setPhase("idle")
+        setSelected(null)
+      })
+    }
+    setShutterOpen(false)
+  }, [focus])
+
+  const onShutter = (open: boolean) => {
+    if (open) return
+    const next = afterClose.current
+    afterClose.current = null
+    next?.()
+    window.setTimeout(() => {
+      setFlash((f) => f + 1)
+      setShutterOpen(true)
+    }, 160)
+  }
+
+  const layouts: Record<CameraId, Record<string, string>> = narrow
+    ? {
+        sony: { left: "0%", top: "14%", width: "100%", height: "33%" },
+        nikon: { left: "0%", top: "47%", width: "100%", height: "33%" },
+      }
+    : {
+        sony: { left: "1.5%", top: "13%", width: "47.5%", height: "64%" },
+        nikon: { left: "51%", top: "13%", width: "47.5%", height: "64%" },
+      }
+
+  const shown = revealedAt !== null
 
   return (
-    <section ref={section} id="top" className="relative h-[290vh]">
-      <div ref={sticky} className="sticky top-0 h-svh w-full overflow-hidden">
-        {/* backdrop: warm vignette + a soft glow behind each body */}
-        <div className="absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_45%,#1d1a17_0%,#0b0a09_60%,#050505_100%)]" />
-        <div className="absolute left-[8%] top-[30%] size-[38vmax] -translate-x-1/2 rounded-full bg-[#f0782d]/10 blur-[110px]" />
-        <div className="absolute right-[8%] top-[30%] size-[38vmax] translate-x-1/2 rounded-full bg-[#f5c518]/[0.07] blur-[110px]" />
+    <section ref={section} id="cameras" className="relative h-[270vh]">
+      <div className="sticky top-0 h-svh w-full overflow-hidden bg-ink">
+        <TopoField className="opacity-90" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_45%,transparent_40%,rgba(6,6,7,.85))]" />
 
-        <CameraStage
-          progress={camP}
-          phase={phase}
-          selected={selected}
-          startedAt={startedAt}
-          active={inView && phase !== "gallery"}
-          onSelect={pick}
-          onFocused={onFocused}
-          onReturned={onReturned}
-          labelRefs={labelRefs}
-        />
+        <motion.div className="absolute inset-0" style={{ scale: frameScale, y: frameY }}>
+          {IDS.map((id) => (
+            <CameraFrame
+              key={id}
+              id={id}
+              layout={layouts[id]}
+              phase={phase}
+              selected={selected}
+              choosing={choosing}
+              scrollP={scrollP}
+              focus={focus}
+              introAt={introAt(id)}
+              onReady={() => markReady(id)}
+              onPick={pick}
+            />
+          ))}
+        </motion.div>
 
-        {(["sony", "nikon"] as const).map((id) => (
-          <div
-            key={id}
-            ref={(el) => {
-              labelRefs.current[id] = el
-            }}
-            className="pointer-events-none absolute left-0 top-0 z-30 will-change-transform"
-          >
-            <CameraLabel id={id} visible={labelsVisible} onPick={pick} />
-          </div>
-        ))}
-
-        <Hud caption={caption} />
-
-        {/* name + intro, in front of the cameras */}
+        {/* top meta row, under the nav */}
         <motion.div
-          className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center"
-          style={{ opacity: nameOpacity, y: nameY, filter: nameBlur }}
+          className="pointer-events-none absolute inset-x-0 top-[72px] z-20 hidden justify-between px-4 sm:flex sm:px-8"
+          style={{ opacity: topOpacity }}
         >
-          <motion.div
-            className="relative px-6 py-4 sm:px-10"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.15, duration: 0.3 }}
-          >
-            {/* AF box that hunts, then locks green */}
-            <motion.div
-              className="absolute inset-0"
-              initial={{ scale: 1.35, opacity: 0 }}
-              animate={{ scale: [1.35, 0.94, 1.03, 1], opacity: [0, 1, 1, 1] }}
-              transition={{ delay: 1.2, duration: 1.2, times: [0, 0.5, 0.8, 1] }}
-            >
-              {["left-0 top-0 border-l border-t", "right-0 top-0 border-r border-t", "left-0 bottom-0 border-l border-b", "right-0 bottom-0 border-r border-b"].map((c) => (
-                <motion.span
-                  key={c}
-                  className={"absolute size-5 " + c}
-                  initial={{ borderColor: "rgba(255,255,255,.7)" }}
-                  animate={{ borderColor: ["rgba(255,255,255,.7)", "rgba(74,222,128,1)", "rgba(74,222,128,0)"] }}
-                  transition={{ delay: 2.2, duration: 2.2, times: [0, 0.15, 1] }}
-                />
-              ))}
-            </motion.div>
-            <motion.p
-              className="mb-3 font-mono text-[10px] uppercase tracking-[0.5em] text-white/60 sm:text-xs"
-              initial={{ opacity: 0, letterSpacing: "1.2em" }}
-              animate={{ opacity: 1, letterSpacing: "0.5em" }}
-              transition={{ delay: 1.3, duration: 1.2, ease: EASE }}
-            >
-              Portfolio · {SITE.since}—{SITE.year}
-            </motion.p>
-            <h1 className="font-display leading-[0.84] text-[#f4f2ee]">
-              <SplitName text={SITE.first} delay={1.45} className="text-[clamp(2.6rem,10vw,8.5rem)]" />
-              <br />
-              <SplitName
-                text={SITE.last}
-                delay={1.75}
-                className="text-outline text-[clamp(2.6rem,10vw,8.5rem)]"
-              />
-            </h1>
-          </motion.div>
           <motion.p
-            className="mt-4 font-mono text-[10px] uppercase tracking-[0.35em] text-white/70 sm:text-xs"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 2.7, duration: 0.8, ease: EASE }}
-          >
-            {SITE.roles.join("  ·  ")}
-          </motion.p>
-          <motion.p
-            className="mt-5 max-w-xl text-balance text-sm leading-relaxed text-white/70 sm:text-base"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 3.1, duration: 0.9, ease: EASE }}
+            className="max-w-xs text-sm leading-relaxed text-paper/60"
+            initial={{ opacity: 0, y: 10 }}
+            animate={shown ? { opacity: 1, y: 0 } : {}}
+            transition={{ delay: 1.4, duration: 0.9 }}
           >
             {SITE.intro}
           </motion.p>
-        </motion.div>
-
-        {/* scroll cue */}
-        <motion.div
-          className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 text-center sm:bottom-20"
-          style={{ opacity: cueOpacity }}
-        >
           <motion.div
-            className="flex flex-col items-center gap-2 font-mono text-[10px] uppercase tracking-[0.35em] text-white/60"
+            className="label text-right text-paper/45"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 3.8, duration: 0.8 }}
+            animate={shown ? { opacity: 1 } : {}}
+            transition={{ delay: 1.6, duration: 0.9 }}
           >
-            Scroll to pick a camera
-            <motion.span animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.6 }}>
-              <ArrowDown className="size-4" />
-            </motion.span>
+            <p>{SITE.roles.join(" / ")}</p>
+            <p className="mt-2">
+              Est. {SITE.since} — <span className="text-signal">{SITE.year - SITE.since} yrs</span>
+            </p>
           </motion.div>
         </motion.div>
 
-        {/* chooser headline */}
+        {/* the giant name */}
         <motion.div
-          className="pointer-events-none absolute inset-x-0 top-[9%] z-10 px-6 text-center sm:top-[11%]"
-          style={{ opacity: pickOpacity, y: pickY }}
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-4 sm:px-6"
+          style={{ y: nameY, opacity: nameOpacity }}
         >
+          <div className="label mb-2 flex items-end justify-between text-paper/45">
+            <motion.span initial={{ opacity: 0 }} animate={shown ? { opacity: 1 } : {}} transition={{ delay: 1.2 }}>
+              Field notes — {SITE.since}/{SITE.year}
+            </motion.span>
+            <motion.span
+              className="flex items-center gap-2"
+              initial={{ opacity: 0 }}
+              animate={shown ? { opacity: 1 } : {}}
+              transition={{ delay: 2 }}
+            >
+              Scroll — pick a body <ArrowDownRight className="size-3.5 text-signal" />
+            </motion.span>
+          </div>
+          <h1 className="font-display flex items-end justify-between gap-4 text-paper">
+            <Rise text={SITE.first} show={shown} delay={0.1} className="text-[clamp(3.4rem,15.2vw,17rem)] leading-[0.8]" />
+          </h1>
+          <div className="mt-1 flex items-start justify-between">
+            <Rise text={SITE.last} show={shown} delay={0.5} className="font-display text-stroke text-[clamp(1.8rem,6vw,6.5rem)] leading-[0.85]" />
+            <motion.p
+              className="label hidden max-w-[16rem] text-right text-paper/40 md:block"
+              initial={{ opacity: 0 }}
+              animate={shown ? { opacity: 1 } : {}}
+              transition={{ delay: 1.8 }}
+            >
+              Real camera models — Sony α7R III &amp; Nikon D3100. Move your cursor to raise the terrain.
+            </motion.p>
+          </div>
+        </motion.div>
+
+        {/* chooser headline */}
+        <motion.div className="pointer-events-none absolute inset-x-0 bottom-[6%] z-20 px-6 text-center" style={{ opacity: pickOpacity }}>
           <AnimatePresence>
-            {phase === "idle" ? (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <Badge variant="outline" className="rounded-none border-white/30 font-mono text-[10px] uppercase tracking-[0.3em] text-white/70">
-                  Two bodies · one eye
-                </Badge>
-                <h2 className="font-display mt-3 text-[clamp(2.2rem,6vw,4.6rem)] leading-none text-white">
-                  Pick a camera, <span className="text-outline">see what it saw.</span>
-                </h2>
-              </motion.div>
+            {phase === "idle" && choosing ? (
+              <motion.p className="label text-paper/50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                Two bodies — <span className="text-signal">choose one</span> — it turns around and takes you inside
+              </motion.p>
             ) : null}
           </AnimatePresence>
         </motion.div>
       </div>
 
-      <Iris />
+      {phase === "gallery" && selected ? <Gallery id={selected} onBack={back} /> : null}
 
-      <AnimatePresence>{phase === "gallery" && selected ? <Gallery key={selected} id={selected} onBack={back} /> : null}</AnimatePresence>
+      <Shutter open={shutterOpen} onDone={onShutter}>
+        {phase === "loading" ? (
+          <div className="flex w-full max-w-5xl items-end justify-between px-6">
+            <div className="label text-paper/40">
+              <p>Loading terrain</p>
+              <p className="mt-1">{loaded}/2 bodies</p>
+            </div>
+            <p className="font-display text-[clamp(5rem,16vw,14rem)] tabular-nums text-paper">
+              {String(count).padStart(3, "0")}
+            </p>
+          </div>
+        ) : null}
+      </Shutter>
+      <Flash fire={flash} />
     </section>
   )
 }

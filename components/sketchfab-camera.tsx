@@ -2,9 +2,14 @@
 
 /**
  * One real camera model, embedded from Sketchfab and driven through the official Viewer API.
- * Visitors can't grab it (pointer-events are off); instead we fly Sketchfab's own camera every
- * frame: a spiral in on arrival, a push-in on scroll, and on focus an orbit round to the back
- * followed by a dolly into the rear LCD. Sketchfab is Z-up.
+ * Visitors can't grab it (pointer-events are off); instead we fly Sketchfab's camera every frame:
+ * a spiral in on arrival, a push-in on scroll, and on focus an orbit round to the back followed
+ * by a dolly into the rear LCD. Sketchfab's world is Z-up; all numbers below are world units
+ * measured per model (see CALIBRATION).
+ *
+ * The iframe overhangs its box top and bottom and the overflow is hidden: Sketchfab's title bar
+ * lives in the top strip, its "click & hold" hint and logo in the bottom one. The camera is panned so the subject
+ * stays centred in the visible part.
  */
 
 import * as React from "react"
@@ -13,36 +18,59 @@ import type { MotionValue } from "framer-motion"
 type Vec3 = [number, number, number]
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type SketchfabApi = any
 declare global {
   interface Window {
     Sketchfab?: any
-    __sf?: Record<string, any>
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export type Calibration = {
-  /** Azimuth offset (radians, from the default view) that looks straight at the rear LCD. */
-  backAz: number
-  /** Elevation (radians) for looking at the LCD. */
-  backEl: number
-  /** Centre of the LCD in model space; falls back to the default target. */
-  screen?: Vec3
-  /** Camera distance at the end of the dolly, as a fraction of the default distance. */
-  screenDist: number
-  /** Multiplier on the default distance for the resting framing. */
-  fit: number
-  /** Extra azimuth for the resting view, so the two bodies face the middle. */
+  target: Vec3
+  fov: number
   restAz: number
-  /** Which way it spirals in (+1 / -1). */
+  restEl: number
+  restR: number
+  /** Azimuth that looks straight at the LCD (unwrapped so the turn goes the way we want). */
+  backAz: number
+  backEl: number
+  screen: Vec3
+  screenR: number
   spin: 1 | -1
 }
 
+export const CALIBRATION: Record<"sony" | "nikon", Calibration> = {
+  sony: {
+    target: [0, 2.92, 8.07],
+    fov: 30,
+    restAz: -0.55,
+    restEl: 0.2,
+    restR: 70,
+    backAz: Math.PI,
+    backEl: 0,
+    screen: [0, 4.7, 6.5],
+    screenR: 12,
+    spin: 1,
+  },
+  nikon: {
+    target: [-3.28, -0.67, 8.65],
+    fov: 30,
+    restAz: -Math.PI / 2 + 0.55,
+    restEl: 0.2,
+    restR: 72,
+    backAz: Math.PI / 2 - 2 * Math.PI,
+    backEl: 0,
+    screen: [1.1, -0.67, 6.2],
+    screenR: 22,
+    spin: -1,
+  },
+}
+
 const SCRIPT = "https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js"
+const CROP = 150 // bottom strip: hint + logo
+const CROP_TOP = 70 // top strip: model title + share button
 let scriptPromise: Promise<void> | null = null
 function loadScript() {
-  if (typeof window === "undefined") return Promise.resolve()
   if (window.Sketchfab) return Promise.resolve()
   if (!scriptPromise)
     scriptPromise = new Promise((resolve, reject) => {
@@ -62,7 +90,6 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3)
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
 type Props = {
-  id: string
   uid: string
   title: string
   calib: Calibration
@@ -73,23 +100,17 @@ type Props = {
   /** performance.now() when the spiral-in should start; null holds it far away. */
   introAt: number | null
   onReady?: () => void
-  className?: string
 }
 
-export function SketchfabCamera({ id, uid, title, calib, progress, focus, introAt, onReady, className }: Props) {
+export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, onReady }: Props) {
   const frame = React.useRef<HTMLIFrameElement>(null)
-  const api = React.useRef<SketchfabApi>(null)
-  const base = React.useRef<null | { t: Vec3; r: number; a: number; e: number }>(null)
-  const calibRef = React.useRef(calib)
-  const introRef = React.useRef(introAt)
-  const readyCb = React.useRef(onReady)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = React.useRef<any>(null)
+  const live = React.useRef({ calib, introAt, onReady })
   React.useEffect(() => {
-    calibRef.current = calib
-    introRef.current = introAt
-    readyCb.current = onReady
+    live.current = { calib, introAt, onReady }
   }, [calib, introAt, onReady])
 
-  // Boot the viewer.
   React.useEffect(() => {
     let dead = false
     loadScript()
@@ -97,34 +118,20 @@ export function SketchfabCamera({ id, uid, title, calib, progress, focus, introA
         if (dead || !frame.current || !window.Sketchfab) return
         const client = new window.Sketchfab("1.12.1", frame.current)
         client.init(uid, {
-          success: (a: SketchfabApi) => {
-            api.current = a
-            ;(window.__sf ??= {})[id + "_status"] = "success"
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          success: (a: any) => {
             a.start()
-            a.addEventListener("viewerstart", () => ((window.__sf ??= {})[id + "_status"] = "started"))
             a.addEventListener("viewerready", () => {
-              a.getCameraLookAt((err: unknown, cam: { position: Vec3; target: Vec3 }) => {
-                if (err || dead) return
-                const [px, py, pz] = cam.position
-                const [tx, ty, tz] = cam.target
-                const dx = px - tx
-                const dy = py - ty
-                const dz = pz - tz
-                const r = Math.hypot(dx, dy, dz)
-                base.current = { t: cam.target, r, a: Math.atan2(dy, dx), e: Math.asin(dz / r) }
-                ;(window.__sf ??= {})[id] = { api: a, base: base.current }
-                readyCb.current?.()
-              })
+              if (dead) return
+              a.setFov(live.current.calib.fov)
+              api.current = a
+              live.current.onReady?.()
             })
           },
-          error: (e: unknown) => {
-            ;(window.__sf ??= {})[id + "_status"] = "error " + String(e)
-            readyCb.current?.()
-          },
+          error: () => live.current.onReady?.(),
           autostart: 1,
-          preload: 1,
-          transparent: 1,
           camera: 0,
+          transparent: 1,
           autospin: 0,
           scrollwheel: 0,
           dnt: 1,
@@ -138,10 +145,8 @@ export function SketchfabCamera({ id, uid, title, calib, progress, focus, introA
           ui_hint: 0,
           ui_infos: 0,
           ui_inspector: 0,
-          ui_loading: 0,
           ui_settings: 0,
           ui_sound: 0,
-          ui_start: 0,
           ui_stop: 0,
           ui_theme: "dark",
           ui_vr: 0,
@@ -149,13 +154,12 @@ export function SketchfabCamera({ id, uid, title, calib, progress, focus, introA
           ui_watermark_link: 0,
         })
       })
-      .catch(() => readyCb.current?.())
+      .catch(() => live.current.onReady?.())
     return () => {
       dead = true
     }
-  }, [uid, id])
+  }, [uid])
 
-  // Fly the camera.
   React.useEffect(() => {
     let raf = 0
     let last = ""
@@ -163,48 +167,61 @@ export function SketchfabCamera({ id, uid, title, calib, progress, focus, introA
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const a = api.current
-      const b = base.current
-      if (!a || !b) return
-      if (++n % 2) return // ~30 updates/s is plenty and keeps postMessage traffic low
-      const c = calibRef.current
+      const el0 = frame.current
+      if (!a || !el0) return
+      if (++n % 2) return // ~30 updates/s keeps postMessage traffic low
+      const c = live.current.calib
       const now = performance.now()
-      const intro = introRef.current
-      const u = intro === null ? 1 : 1 - easeOutCubic(clamp01((now - intro) / 3000))
+      const intro = live.current.introAt
+      const u = intro === null ? 1 : 1 - easeOutCubic(clamp01((now - intro) / 3200))
       const p = progress.get()
       const f = focus.get()
       const fa = easeInOut(clamp01(f / 0.55))
-      const fb = easeInOut(clamp01((f - 0.45) / 0.55))
+      const fb = easeInOut(clamp01((f - 0.4) / 0.6))
       const t = now / 1000
+      const calm = (1 - fa) * (1 - u)
 
-      let r = b.r * c.fit * (1 + 2.8 * u) * (1 - 0.14 * p)
-      let az = b.a + c.restAz * (1 - u) + u * 2.2 * Math.PI * c.spin + Math.sin(t * 0.5) * 0.12 * (1 - fa) * (1 - u)
-      let el = b.e + u * 0.4 + Math.sin(t * 0.7) * 0.03 * (1 - fa)
-      let tg: Vec3 = b.t
+      let az = c.restAz + u * 2.3 * Math.PI * c.spin + Math.sin(t * 0.45) * 0.14 * calm
+      let el = c.restEl + u * 0.45 + Math.sin(t * 0.7) * 0.025 * calm
+      let r = c.restR * (1 + 2.6 * u) * (1 - 0.16 * p)
+      let tg: Vec3 = c.target
       if (fa > 0) {
-        az = lerp(az, b.a + c.backAz, fa)
+        az = lerp(az, c.backAz, fa)
         el = lerp(el, c.backEl, fa)
-        const s = c.screen ?? b.t
-        tg = [lerp(b.t[0], s[0], fa), lerp(b.t[1], s[1], fa), lerp(b.t[2], s[2], fa)]
-        r = lerp(r, b.r * 0.9, fa)
-        r = lerp(r, b.r * c.screenDist, fb)
+        tg = [lerp(c.target[0], c.screen[0], fa), lerp(c.target[1], c.screen[1], fa), lerp(c.target[2], c.screen[2], fa)]
+        r = lerp(r, c.restR * 0.62, fa)
+        r = lerp(r, c.screenR, fb)
       }
+
+      // Pan down so the subject sits in the middle of the visible (uncropped) part.
+      const h = el0.clientHeight || 1
+      const k = (((CROP - CROP_TOP) / 2) / h) * 2 * r * Math.tan(((c.fov * Math.PI) / 180) / 2) * (1 - fb)
       const ce = Math.cos(el)
-      const pos: Vec3 = [tg[0] + r * ce * Math.cos(az), tg[1] + r * ce * Math.sin(az), tg[2] + r * Math.sin(el)]
-      const key = pos.map((v) => v.toFixed(4)).join() + tg.map((v) => v.toFixed(4)).join()
+      const up: Vec3 = [-Math.sin(el) * Math.cos(az), -Math.sin(el) * Math.sin(az), ce]
+      const target: Vec3 = [tg[0] - up[0] * k, tg[1] - up[1] * k, tg[2] - up[2] * k]
+      const pos: Vec3 = [
+        target[0] + r * ce * Math.cos(az),
+        target[1] + r * ce * Math.sin(az),
+        target[2] + r * Math.sin(el),
+      ]
+      const key = pos.map((v) => v.toFixed(3)).join() + target.map((v) => v.toFixed(3)).join()
       if (key === last) return
       last = key
-      a.setCameraLookAt(pos, tg, 0)
+      a.setCameraLookAt(pos, target, 0)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [progress, focus])
 
   return (
-    <iframe
-      ref={frame}
-      title={title}
-      className={"pointer-events-none h-full w-full border-0 " + (className ?? "")}
-      allow="autoplay; fullscreen; xr-spatial-tracking"
-    />
+    <div className="absolute inset-0 overflow-hidden">
+      <iframe
+        ref={frame}
+        title={title}
+        className="pointer-events-none absolute inset-x-0 w-full border-0"
+        style={{ top: -CROP_TOP, height: `calc(100% + ${CROP + CROP_TOP}px)` }}
+        allow="autoplay; fullscreen; xr-spatial-tracking"
+      />
+    </div>
   )
 }

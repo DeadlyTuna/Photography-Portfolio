@@ -8,7 +8,7 @@
  *  - the ring is pushed back by its radius so the front card sits at true size, and card
  *    size / radius follow the viewport
  *  - clicking the front cards calls `onItemClick(index)` (used for the fullscreen viewer)
- *  - hard-edged, monochrome styling
+ *  - film-still styling: gradients, frame numbers, serif titles
  */
 
 import React, { useEffect, useRef, useState, type HTMLAttributes } from "react"
@@ -102,7 +102,7 @@ const CircularGallery = React.forwardRef<HTMLDivElement, CircularGalleryProps>(
             best = i
           }
           el.style.opacity = String(Math.max(0.08, 1 - d / 140))
-          el.style.filter = d < anglePerItem / 2 ? "none" : `grayscale(1) brightness(${Math.max(0.35, 1 - d / 160)})`
+          el.style.filter = d < anglePerItem / 2 ? "none" : `grayscale(1) brightness(${Math.max(0.3, 1 - d / 150)})`
           el.style.pointerEvents = d < 70 ? "auto" : "none"
           el.dataset.front = d < anglePerItem / 2 ? "1" : "0"
         }
@@ -204,23 +204,24 @@ const CircularGallery = React.forwardRef<HTMLDivElement, CircularGalleryProps>(
                   backfaceVisibility: "hidden",
                 }}
               >
-                <div className="relative h-full w-full overflow-hidden border border-white/25 bg-black transition-[border-color] duration-200 group-hover:border-[var(--acc)] group-data-[front=1]:border-white" style={{ "--acc": accent } as React.CSSProperties}>
+                <div
+                  data-cursor="Open"
+                  className="relative h-full w-full overflow-hidden border border-hair bg-black shadow-[0_30px_80px_rgba(0,0,0,.8)] transition-[border-color] duration-300 group-hover:border-[var(--acc)] group-data-[front=1]:border-[var(--acc)]"
+                  style={{ "--acc": accent } as React.CSSProperties}
+                >
                   <img
                     src={item.photo.url}
                     alt={item.photo.text}
                     draggable={false}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
                     style={{ objectPosition: item.photo.pos || "center" }}
                   />
-                  <div className="absolute left-0 top-0 bg-black px-2 py-1 font-mono text-[10px] tracking-[0.2em] text-white">
-                    {String(i + 1).padStart(2, "0")}/{String(n).padStart(2, "0")}
-                  </div>
-                  <div className="absolute inset-x-0 bottom-0 border-t border-white/25 bg-black/85 p-3 text-white">
-                    <h2 className="text-sm font-black uppercase leading-tight tracking-tight">{item.common}</h2>
-                    <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.16em] text-white/55">{item.binomial || "—"}</p>
-                    <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.16em]" style={{ color: accent }}>
-                      {item.photo.by}
-                    </p>
+                  <span className="label absolute left-0 top-0 bg-ink px-2 py-1 text-[9px] text-paper/80">
+                    FR <span style={{ color: accent }}>{String(i + 1).padStart(2, "0")}</span>
+                  </span>
+                  <div className="absolute inset-x-0 bottom-0 border-t border-hair bg-ink/85 px-3 py-2.5 backdrop-blur-sm">
+                    <h2 className="font-display truncate text-xl text-paper">{item.common}</h2>
+                    <p className="label mt-1 truncate text-[8px] text-paper/45">{item.binomial || item.photo.by}</p>
                   </div>
                 </div>
               </div>
