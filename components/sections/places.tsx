@@ -38,7 +38,7 @@ export function Places() {
         <div className="flex flex-col justify-between gap-8 md:flex-row md:items-end">
           <div>
             <p className="label text-paper/50">
-              <span className="text-signal">03</span> — Places
+              <span className="text-signal">02</span> — Places
             </p>
             <h2 className="font-display mt-6 text-[clamp(3.6rem,10vw,10rem)] text-paper">
               {["Where the", "light was"].map((w, i) => (
@@ -57,7 +57,7 @@ export function Places() {
             </h2>
           </div>
           <p className="max-w-sm text-sm leading-relaxed text-paper/60">
-            Five pins on the map, with the coordinates and the body that was in my hands. Hover a place to see
+            {PLACES.length} pins on the map, with the coordinates and the body that was in my hands. Hover a place to see
             the frame; click to open it.
           </p>
         </div>
@@ -80,7 +80,7 @@ export function Places() {
                 onBlur={() => setActive(null)}
                 data-cursor="View"
                 className={cn(
-                  "group grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-5 text-left transition-opacity duration-500 focus-visible:outline-none md:grid-cols-[4rem_1fr_14rem_10rem_8rem_2rem] md:py-7",
+                  "group grid w-full grid-cols-[2.5rem_1fr_auto] items-center gap-4 py-5 text-left transition-opacity duration-500 focus-visible:outline-none lg:grid-cols-[4rem_minmax(0,1fr)_13rem_10rem_5rem_2rem] md:py-7",
                   active !== null && active !== i ? "opacity-30" : "opacity-100",
                 )}
               >
@@ -89,21 +89,21 @@ export function Places() {
                   <span className="font-display block truncate text-[clamp(2.4rem,6.4vw,6.4rem)] text-paper transition-all duration-500 group-hover:translate-x-4 group-hover:text-signal group-focus-visible:translate-x-4 group-focus-visible:text-signal">
                     {p.name}
                   </span>
-                  <span className="label mt-1 block text-paper/45 md:hidden">
+                  <span className="label mt-1 block text-paper/45 lg:hidden">
                     {p.coords} · {p.year}
                   </span>
                 </span>
-                <span className="label hidden text-paper/55 md:block">
+                <span className="label hidden text-paper/55 lg:block">
                   {p.region}
                   <br />
                   <span className="text-paper/35">{p.coords}</span>
                 </span>
-                <span className="label hidden text-paper/55 md:block">
+                <span className="label hidden text-paper/55 lg:block">
                   ▲ {p.elevation}
                   <br />
                   <span className="text-paper/35">{p.body}</span>
                 </span>
-                <span className="label hidden text-paper/55 md:block">{p.year}</span>
+                <span className="label hidden text-paper/55 lg:block">{p.year}</span>
                 {/* touch: small inline thumb; fine pointers: arrow */}
                 <span className="flex justify-end">
                   {fine ? (

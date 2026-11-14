@@ -35,7 +35,7 @@ export function scrollToTarget(target: string | number) {
 export function SmoothScroll() {
   React.useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    lenis = new Lenis({ autoRaf: true, lerp: 0.09, wheelMultiplier: 0.95 })
+    lenis = new Lenis({ autoRaf: true, lerp: 0.14, wheelMultiplier: 1 })
     if (locked) lenis.stop()
     return () => {
       lenis?.destroy()

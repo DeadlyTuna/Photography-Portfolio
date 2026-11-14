@@ -25,7 +25,7 @@ function CountUp({ to, suffix }: { to: number; suffix?: string }) {
   return (
     <span className="font-display text-[clamp(4.5rem,10vw,9rem)] leading-none text-paper">
       <span ref={ref}>0</span>
-      {suffix ? <span className="text-signal">{suffix}</span> : null}
+      {suffix ? <span className="ml-1 align-top text-[0.32em] text-signal">{suffix}</span> : null}
     </span>
   )
 }
@@ -76,13 +76,15 @@ export function About() {
             viewport={{ once: true, margin: "-10% 0px" }}
             transition={{ duration: 1, ease: [0.2, 0.7, 0.2, 1] }}
           >
-            <div ref={frame} className="relative aspect-[4/5] overflow-hidden border border-hair bg-black">
+            <div ref={frame} className="relative overflow-hidden border border-hair bg-black">
               <motion.img
                 src={ME_PHOTO.src}
                 alt="Harsh photographing a misty valley at sunrise"
                 loading="lazy"
-                style={{ y, scale: 1.18 }}
-                className="h-full w-full object-cover grayscale-[30%]"
+                width={ME_PHOTO.w}
+                height={ME_PHOTO.h}
+                style={{ y }}
+                className="block h-auto w-full object-contain grayscale-[30%]"
               />
             </div>
             {(["-left-2 -top-2 border-l border-t", "-right-2 -top-2 border-r border-t", "-left-2 -bottom-2 border-l border-b", "-right-2 -bottom-2 border-r border-b"] as const).map((k) => (

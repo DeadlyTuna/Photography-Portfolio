@@ -124,6 +124,10 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
             a.addEventListener("viewerready", () => {
               if (dead) return
               a.setFov(live.current.calib.fov)
+              // Kill the post-process vignette so the transparent background stays clean.
+              try {
+                a.setPostProcessing?.({ vignetteEnable: false, grainEnable: false, chromaticAberrationEnable: false })
+              } catch {}
               api.current = a
               live.current.onReady?.()
             })
@@ -131,6 +135,8 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
           error: () => live.current.onReady?.(),
           autostart: 1,
           camera: 0,
+          // Cap texture resolution: far less to download, still sharp at this size.
+          max_texture_size: 2048,
           transparent: 1,
           autospin: 0,
           scrollwheel: 0,
@@ -160,16 +166,31 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
     }
   }, [uid])
 
+  // Pause everything (and let the browser throttle the iframe) while the frame is off-screen.
+  const box = React.useRef<HTMLDivElement>(null)
+  const onScreen = React.useRef(true)
+  React.useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const io = new IntersectionObserver(([e]) => {
+      onScreen.current = e.isIntersecting
+      // Only hide once the model has finished loading: the page now opens on other sections,
+      // and the download must keep going in the background until it is ready.
+      if (frame.current && api.current) frame.current.style.visibility = e.isIntersecting ? "visible" : "hidden"
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+
   React.useEffect(() => {
     let raf = 0
     let last = ""
-    let n = 0
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const a = api.current
       const el0 = frame.current
-      if (!a || !el0) return
-      if (++n % 2) return // ~30 updates/s keeps postMessage traffic low
+      const b0 = box.current
+      if (!a || !el0 || !b0 || !onScreen.current || document.hidden) return
       const c = live.current.calib
       const now = performance.now()
       const intro = live.current.introAt
@@ -178,11 +199,10 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
       const f = focus.get()
       const fa = easeInOut(clamp01(f / 0.55))
       const fb = easeInOut(clamp01((f - 0.4) / 0.6))
-      const t = now / 1000
-      const calm = (1 - fa) * (1 - u)
 
-      let az = c.restAz + u * 2.3 * Math.PI * c.spin + Math.sin(t * 0.45) * 0.14 * calm
-      let el = c.restEl + u * 0.45 + Math.sin(t * 0.7) * 0.025 * calm
+      // No idle sway: when nothing moves we send nothing and Sketchfab stops re-rendering.
+      let az = c.restAz + u * 2.3 * Math.PI * c.spin
+      let el = c.restEl + u * 0.45
       let r = c.restR * (1 + 2.6 * u) * (1 - 0.16 * p)
       let tg: Vec3 = c.target
       if (fa > 0) {
@@ -193,8 +213,12 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
         r = lerp(r, c.screenR, fb)
       }
 
-      // Pan down so the subject sits in the middle of the visible (uncropped) part.
+      // The iframe is a fixed viewport-sized canvas; the box around it can be much smaller.
+      // Back off so the subject keeps its size relative to the visible box, then pan so it
+      // sits in the middle of that box.
       const h = el0.clientHeight || 1
+      const vis = Math.max(1, b0.clientHeight)
+      r *= lerp(h / vis, 1, fb)
       const k = (((CROP - CROP_TOP) / 2) / h) * 2 * r * Math.tan(((c.fov * Math.PI) / 180) / 2) * (1 - fb)
       const ce = Math.cos(el)
       const up: Vec3 = [-Math.sin(el) * Math.cos(az), -Math.sin(el) * Math.sin(az), ce]
@@ -204,7 +228,7 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
         target[1] + r * ce * Math.sin(az),
         target[2] + r * Math.sin(el),
       ]
-      const key = pos.map((v) => v.toFixed(3)).join() + target.map((v) => v.toFixed(3)).join()
+      const key = pos.map((v) => v.toFixed(2)).join() + target.map((v) => v.toFixed(2)).join()
       if (key === last) return
       last = key
       a.setCameraLookAt(pos, target, 0)
@@ -213,13 +237,20 @@ export function SketchfabCamera({ uid, title, calib, progress, focus, introAt, o
     return () => cancelAnimationFrame(raf)
   }, [progress, focus])
 
+  // The iframe never changes size (resizing a WebGL canvas mid-animation is what stutters):
+  // it is always viewport-sized plus the crop strips, centred in the box, and the box's
+  // overflow does the framing. The shift puts the visible strip's centre on the box centre.
   return (
-    <div className="absolute inset-0 overflow-hidden">
+    <div ref={box} className="absolute inset-0 overflow-hidden">
       <iframe
         ref={frame}
         title={title}
-        className="pointer-events-none absolute inset-x-0 w-full border-0"
-        style={{ top: -CROP_TOP, height: `calc(100% + ${CROP + CROP_TOP}px)` }}
+        className="pointer-events-none absolute left-1/2 top-1/2 border-0"
+        style={{
+          width: "100vw",
+          height: `calc(100svh + ${CROP + CROP_TOP}px)`,
+          transform: `translate(-50%, calc(-50% + ${(CROP - CROP_TOP) / 2}px))`,
+        }}
         allow="autoplay; fullscreen; xr-spatial-tracking"
       />
     </div>

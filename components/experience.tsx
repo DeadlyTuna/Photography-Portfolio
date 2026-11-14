@@ -8,10 +8,11 @@ import {
   useMotionValue,
   useMotionValueEvent,
   useScroll,
+  useInView,
   useTransform,
   type MotionValue,
 } from "framer-motion"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUpRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery"
 import { TopoField } from "@/components/ui/topo-field"
@@ -102,18 +103,43 @@ function CameraFrame({
       className="absolute"
       style={{ zIndex: full ? 40 : 5 }}
       initial={false}
-      animate={{ ...target, opacity: isOther ? 0 : visible ? 1 : 0 }}
+      animate={{
+        ...target,
+        opacity: isOther ? 0 : 1,
+        // fully hidden (not just transparent) once faded, so its WebGL view stops costing anything
+        ...(isOther ? { transitionEnd: { visibility: "hidden" } } : { visibility: "visible" }),
+      }}
       transition={{ duration: full || isOther ? 1.1 : 0.9, ease: [0.7, 0, 0.2, 1] }}
     >
-      <SketchfabCamera
-        uid={UIDS[id]}
-        title={`${c.name}, 3D model`}
-        calib={CALIBRATION[id]}
-        progress={scrollP}
-        focus={focus}
-        introAt={introAt}
-        onReady={onReady}
-      />
+      <motion.div className="absolute inset-0" initial={false} animate={{ opacity: visible ? 1 : 0 }} transition={{ duration: 0.8 }}>
+        <SketchfabCamera
+          uid={UIDS[id]}
+          title={`${c.name}, 3D model`}
+          calib={CALIBRATION[id]}
+          progress={scrollP}
+          focus={focus}
+          introAt={introAt}
+          onReady={onReady}
+        />
+      </motion.div>
+
+      {/* while the model streams in: a quiet "developing" marker instead of an empty hole */}
+      <AnimatePresence>
+        {!visible && phase !== "loading" ? (
+          <motion.div
+            className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <span className="relative flex size-10 items-center justify-center">
+              <span className="absolute inset-0 animate-ping rounded-full border border-signal/40" />
+              <span className="size-1.5 rounded-full bg-signal" />
+            </span>
+            <span className="label text-paper/40">Developing {c.short}…</span>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* viewfinder corners, always faintly there; they snap in when choosable */}
       {!full ? (
@@ -270,72 +296,54 @@ function Gallery({ id, onBack }: { id: CameraId; onBack: () => void }) {
   )
 }
 
-// ------------------------------------------------------------------ opening act
+// ------------------------------------------------------------------ the cameras section
 
+/**
+ * Sits after Places, so the two Sketchfab models (which start loading the moment the page
+ * opens) have had the whole first half of the visit to stream in. They spiral in when the
+ * section comes into view, or as soon as they finish loading if the visitor got here first.
+ */
 export function Experience() {
   const section = React.useRef<HTMLElement>(null)
+  const sticky = React.useRef<HTMLDivElement>(null)
   const narrow = useIsNarrow()
-  const [phase, setPhase] = React.useState<Phase>("loading")
+  const [phase, setPhase] = React.useState<Phase>("idle")
   const [selected, setSelected] = React.useState<CameraId | null>(null)
-  const [shutterOpen, setShutterOpen] = React.useState(false)
+  const [shutterOpen, setShutterOpen] = React.useState(true)
   const [flash, setFlash] = React.useState(0)
-  const [revealedAt, setRevealedAt] = React.useState<number | null>(null)
   const [ready, setReady] = React.useState<Record<CameraId, number | null>>({ sony: null, nikon: null })
+  const [enteredAt, setEnteredAt] = React.useState<number | null>(null)
   const [choosing, setChoosing] = React.useState(false)
-  const [count, setCount] = React.useState(0)
   const focus = useMotionValue(0)
   const afterClose = React.useRef<null | (() => void)>(null)
 
-  const { scrollYProgress } = useScroll({ target: section, offset: ["start start", "end end"] })
-  const scrollP = useTransform(scrollYProgress, [0.08, 0.5], [0, 1], { clamp: true })
-  const nameY = useTransform(scrollYProgress, [0.02, 0.3], ["0%", "60%"])
-  const nameOpacity = useTransform(scrollYProgress, [0.08, 0.28], [1, 0])
-  const topOpacity = useTransform(scrollYProgress, [0.02, 0.16], [1, 0])
-  const frameScale = useTransform(scrollYProgress, [0.08, 0.5], [1, 1.08])
-  const frameY = useTransform(scrollYProgress, [0.08, 0.5], ["0%", "6%"])
-  const pickOpacity = useTransform(scrollYProgress, [0.38, 0.5], [0, 1])
-  useMotionValueEvent(scrollYProgress, "change", (v) => setChoosing(v > 0.4))
-
-  // Preloader counter (honest: tracks the two models, eases toward the next milestone).
-  const loaded = (ready.sony ? 1 : 0) + (ready.nikon ? 1 : 0)
+  const inView = useInView(sticky, { amount: 0.4 })
   React.useEffect(() => {
-    if (phase !== "loading") return
-    const cap = loaded === 2 ? 100 : loaded === 1 ? 82 : 64
-    const id = window.setInterval(() => setCount((c) => (c < cap ? c + Math.max(1, Math.round((cap - c) / 12)) : c)), 60)
-    return () => window.clearInterval(id)
-  }, [phase, loaded])
+    if (inView && enteredAt === null) setEnteredAt(performance.now())
+  }, [inView, enteredAt])
+
+  const { scrollYProgress } = useScroll({ target: section, offset: ["start start", "end end"] })
+  const scrollP = useTransform(scrollYProgress, [0, 0.7], [0, 1], { clamp: true })
+  const frameScale = useTransform(scrollYProgress, [0, 0.7], [0.96, 1.04])
+  const headY = useTransform(scrollYProgress, [0, 1], ["0%", "-30%"])
+  useMotionValueEvent(scrollYProgress, "change", (v) => setChoosing(v > 0.02 && v < 0.995))
 
   const markReady = React.useCallback((id: CameraId) => setReady((r) => (r[id] ? r : { ...r, [id]: performance.now() })), [])
-  React.useEffect(() => {
-    if (phase !== "loading") return
-    const both = ready.sony !== null && ready.nikon !== null
-    const t = window.setTimeout(
-      () => {
-        setCount(100)
-        setFlash((f) => f + 1)
-        setShutterOpen(true)
-        setRevealedAt(performance.now())
-        setPhase("idle")
-      },
-      both ? 900 : 7000,
-    )
-    return () => window.clearTimeout(t)
-  }, [phase, ready])
 
   const introAt = (id: CameraId) => {
     const r = ready[id]
-    if (revealedAt === null || r === null) return null
-    return Math.max(revealedAt + 700 + (id === "nikon" ? 250 : 0), r + 200)
+    if (enteredAt === null || r === null) return null
+    return Math.max(enteredAt + 200 + (id === "nikon" ? 250 : 0), r + 300)
   }
 
   React.useEffect(() => {
-    setScrollLocked(!(phase === "idle" || phase === "loading"))
+    setScrollLocked(phase !== "idle")
   }, [phase])
   React.useEffect(() => () => setScrollLocked(false), [])
 
   const pick = React.useCallback(
     (id: CameraId) => {
-      if (phase !== "idle") return
+      if (phase !== "idle" || introAt(id) === null) return
       setSelected(id)
       setPhase("focusing")
       animate(focus, 1, { duration: 3.2, ease: "linear", delay: 0.35 }).then(() => {
@@ -343,7 +351,8 @@ export function Experience() {
         setShutterOpen(false)
       })
     },
-    [phase, focus],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, focus, ready, enteredAt],
   )
 
   const back = React.useCallback(() => {
@@ -370,23 +379,36 @@ export function Experience() {
 
   const layouts: Record<CameraId, Record<string, string>> = narrow
     ? {
-        sony: { left: "0%", top: "14%", width: "100%", height: "33%" },
-        nikon: { left: "0%", top: "47%", width: "100%", height: "33%" },
+        sony: { left: "0%", top: "16%", width: "100%", height: "32%" },
+        nikon: { left: "0%", top: "49%", width: "100%", height: "32%" },
       }
     : {
-        sony: { left: "1.5%", top: "13%", width: "47.5%", height: "64%" },
-        nikon: { left: "51%", top: "13%", width: "47.5%", height: "64%" },
+        sony: { left: "1.5%", top: "17%", width: "47.5%", height: "62%" },
+        nikon: { left: "51%", top: "17%", width: "47.5%", height: "62%" },
       }
 
-  const shown = revealedAt !== null
-
   return (
-    <section ref={section} id="cameras" className="relative h-[270vh]">
-      <div className="sticky top-0 h-svh w-full overflow-hidden bg-ink">
-        <TopoField className="opacity-90" />
+    <section ref={section} id="cameras" className="relative h-[200vh] border-t border-hair">
+      <div ref={sticky} className="sticky top-0 h-svh w-full overflow-hidden bg-ink">
+        {phase !== "gallery" ? <TopoField className="opacity-90" seed={5} /> : null}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_45%,transparent_40%,rgba(6,6,7,.85))]" />
 
-        <motion.div className="absolute inset-0" style={{ scale: frameScale, y: frameY }}>
+        {/* header */}
+        <motion.div className="pointer-events-none absolute inset-x-0 top-[76px] z-20 flex items-start justify-between px-4 sm:px-8" style={{ y: headY }}>
+          <div>
+            <p className="label text-paper/50">
+              <span className="text-signal">03</span> — Two bodies
+            </p>
+            <h2 className="font-display mt-3 text-[clamp(2.4rem,6vw,5.5rem)] text-paper">
+              Pick a <span className="text-stroke">camera</span>
+            </h2>
+          </div>
+          <p className="label hidden max-w-[17rem] text-right text-paper/45 md:block">
+            Real 3D models. Pick one — it turns around and takes you inside its screen.
+          </p>
+        </motion.div>
+
+        <motion.div className="absolute inset-0" style={{ scale: frameScale }}>
           {IDS.map((id) => (
             <CameraFrame
               key={id}
@@ -394,7 +416,7 @@ export function Experience() {
               layout={layouts[id]}
               phase={phase}
               selected={selected}
-              choosing={choosing}
+              choosing={choosing && introAt(id) !== null}
               scrollP={scrollP}
               focus={focus}
               introAt={introAt(id)}
@@ -404,93 +426,20 @@ export function Experience() {
           ))}
         </motion.div>
 
-        {/* top meta row, under the nav */}
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 top-[72px] z-20 hidden justify-between px-4 sm:flex sm:px-8"
-          style={{ opacity: topOpacity }}
-        >
-          <motion.p
-            className="max-w-xs text-sm leading-relaxed text-paper/60"
-            initial={{ opacity: 0, y: 10 }}
-            animate={shown ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: 1.4, duration: 0.9 }}
-          >
-            {SITE.intro}
-          </motion.p>
-          <motion.div
-            className="label text-right text-paper/45"
-            initial={{ opacity: 0 }}
-            animate={shown ? { opacity: 1 } : {}}
-            transition={{ delay: 1.6, duration: 0.9 }}
-          >
-            <p>{SITE.roles.join(" / ")}</p>
-            <p className="mt-2">
-              Est. {SITE.since} — <span className="text-signal">{SITE.year - SITE.since} yrs</span>
-            </p>
-          </motion.div>
-        </motion.div>
-
-        {/* the giant name */}
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-4 sm:px-6"
-          style={{ y: nameY, opacity: nameOpacity }}
-        >
-          <div className="label mb-2 flex items-end justify-between text-paper/45">
-            <motion.span initial={{ opacity: 0 }} animate={shown ? { opacity: 1 } : {}} transition={{ delay: 1.2 }}>
-              Field notes — {SITE.since}/{SITE.year}
-            </motion.span>
-            <motion.span
-              className="flex items-center gap-2"
-              initial={{ opacity: 0 }}
-              animate={shown ? { opacity: 1 } : {}}
-              transition={{ delay: 2 }}
-            >
-              Scroll — pick a body <ArrowDownRight className="size-3.5 text-signal" />
-            </motion.span>
-          </div>
-          <h1 className="font-display flex items-end justify-between gap-4 text-paper">
-            <Rise text={SITE.first} show={shown} delay={0.1} className="text-[clamp(3.4rem,15.2vw,17rem)] leading-[0.8]" />
-          </h1>
-          <div className="mt-1 flex items-start justify-between">
-            <Rise text={SITE.last} show={shown} delay={0.5} className="font-display text-stroke text-[clamp(1.8rem,6vw,6.5rem)] leading-[0.85]" />
-            <motion.p
-              className="label hidden max-w-[16rem] text-right text-paper/40 md:block"
-              initial={{ opacity: 0 }}
-              animate={shown ? { opacity: 1 } : {}}
-              transition={{ delay: 1.8 }}
-            >
-              Real camera models — Sony α7R III &amp; Nikon D3100. Move your cursor to raise the terrain.
-            </motion.p>
-          </div>
-        </motion.div>
-
-        {/* chooser headline */}
-        <motion.div className="pointer-events-none absolute inset-x-0 bottom-[6%] z-20 px-6 text-center" style={{ opacity: pickOpacity }}>
+        <div className="pointer-events-none absolute inset-x-0 bottom-[5%] z-20 px-6 text-center">
           <AnimatePresence>
-            {phase === "idle" && choosing ? (
+            {phase === "idle" ? (
               <motion.p className="label text-paper/50" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                Two bodies — <span className="text-signal">choose one</span> — it turns around and takes you inside
+                Sony α7R III <span className="text-signal">/</span> Nikon D3100 — {SITE.year - SITE.since} years between them
               </motion.p>
             ) : null}
           </AnimatePresence>
-        </motion.div>
+        </div>
       </div>
 
       {phase === "gallery" && selected ? <Gallery id={selected} onBack={back} /> : null}
 
-      <Shutter open={shutterOpen} onDone={onShutter}>
-        {phase === "loading" ? (
-          <div className="flex w-full max-w-5xl items-end justify-between px-6">
-            <div className="label text-paper/40">
-              <p>Loading terrain</p>
-              <p className="mt-1">{loaded}/2 bodies</p>
-            </div>
-            <p className="font-display text-[clamp(5rem,16vw,14rem)] tabular-nums text-paper">
-              {String(count).padStart(3, "0")}
-            </p>
-          </div>
-        ) : null}
-      </Shutter>
+      <Shutter open={shutterOpen} onDone={onShutter} />
       <Flash fire={flash} />
     </section>
   )

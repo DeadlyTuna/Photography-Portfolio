@@ -24,6 +24,10 @@ export const PLACES: Place[] = [
   { name: "Niagara", region: "North America", coords: "43.08°N 079.07°W", elevation: "99 m", year: "—", body: "Nikon D3100", photo: find("wa-19-40-43-1") },
   { name: "San Francisco", region: "United States", coords: "37.82°N 122.48°W", elevation: "67 m", year: "2016", body: "iPhone 6s", photo: find("img-3018") },
   { name: "Singapore", region: "Gardens by the Bay", coords: "01.28°N 103.86°E", elevation: "15 m", year: "2019", body: "Galaxy Note 9", photo: find("20190720-194945") },
+  // Best guesses from the photos + EXIF dates — edit if any are off.
+  { name: "New York", region: "United States", coords: "40.75°N 073.99°W", elevation: "10 m", year: "2016", body: "Xiaomi Mi 3", photo: find("img-20160428-185125-hdr") },
+  { name: "Big Sur", region: "California coast", coords: "36.27°N 121.81°W", elevation: "80 m", year: "2016", body: "iPhone 6s", photo: find("img-3310") },
+  { name: "Himalaya", region: "Nepal", coords: "28.21°N 083.98°E", elevation: "1,600 m", year: "2023", body: "Xiaomi phone", photo: find("img-20231020-070932") },
 ]
 
 /** A hand-picked run for the "Selected works" reel. */

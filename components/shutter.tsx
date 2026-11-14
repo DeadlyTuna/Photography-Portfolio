@@ -22,6 +22,8 @@ export function Shutter({
   const [scope, run] = useAnimate()
   const done = React.useRef(onDone)
   const first = React.useRef(true)
+  // Whatever `open` is on mount is the resting state; only later changes animate.
+  const [startOpen] = React.useState(open)
   React.useEffect(() => {
     done.current = onDone
   }, [onDone])
@@ -29,7 +31,7 @@ export function Shutter({
   React.useEffect(() => {
     if (first.current) {
       first.current = false
-      if (!open) return
+      return
     }
     const half = BLADES / 2
     const blades = Array.from(scope.current.querySelectorAll("[data-blade]")) as HTMLElement[]
@@ -62,14 +64,14 @@ export function Shutter({
           data-blade=""
           className="relative flex-1 border-y border-black/70"
           style={{
-            transform: "scaleY(1)",
+            transform: startOpen ? "scaleY(0)" : "scaleY(1)",
             transformOrigin: i < BLADES / 2 ? "top" : "bottom",
             background: "linear-gradient(180deg,#0f1012 0%,#1a1c1f 46%,#08090a 54%,#121316 100%)",
             boxShadow: "inset 0 1px 0 rgba(235,237,240,.06)",
           }}
         />
       ))}
-      <div data-veil="" className="absolute inset-0 flex items-center justify-center">
+      <div data-veil="" className="absolute inset-0 flex items-center justify-center" style={{ opacity: startOpen ? 0 : 1 }}>
         {children}
       </div>
     </div>

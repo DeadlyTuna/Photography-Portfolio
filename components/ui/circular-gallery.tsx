@@ -101,10 +101,13 @@ const CircularGallery = React.forwardRef<HTMLDivElement, CircularGalleryProps>(
             bestD = d
             best = i
           }
-          el.style.opacity = String(Math.max(0.08, 1 - d / 140))
-          el.style.filter = d < anglePerItem / 2 ? "none" : `grayscale(1) brightness(${Math.max(0.3, 1 - d / 150)})`
-          el.style.pointerEvents = d < 70 ? "auto" : "none"
-          el.dataset.front = d < anglePerItem / 2 ? "1" : "0"
+          // Opacity is composited (cheap) so it can change every frame; the grayscale lives in
+          // CSS keyed off data-front and only flips when a card crosses the front.
+          el.style.opacity = (Math.round(Math.max(0.08, 1 - d / 140) * 50) / 50).toString()
+          const isFront = d < anglePerItem / 2 ? "1" : "0"
+          if (el.dataset.front !== isFront) el.dataset.front = isFront
+          const pe = d < 70 ? "auto" : "none"
+          if (el.style.pointerEvents !== pe) el.style.pointerEvents = pe
         }
         if (best !== front.current) {
           front.current = best
@@ -213,13 +216,13 @@ const CircularGallery = React.forwardRef<HTMLDivElement, CircularGalleryProps>(
                     src={item.photo.url}
                     alt={item.photo.text}
                     draggable={false}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+                    className="absolute inset-0 h-full w-full object-cover grayscale transition-[transform,filter] duration-500 group-hover:scale-[1.05] group-data-[front=1]:grayscale-0"
                     style={{ objectPosition: item.photo.pos || "center" }}
                   />
                   <span className="label absolute left-0 top-0 bg-ink px-2 py-1 text-[9px] text-paper/80">
                     FR <span style={{ color: accent }}>{String(i + 1).padStart(2, "0")}</span>
                   </span>
-                  <div className="absolute inset-x-0 bottom-0 border-t border-hair bg-ink/85 px-3 py-2.5 backdrop-blur-sm">
+                  <div className="absolute inset-x-0 bottom-0 border-t border-hair bg-ink/90 px-3 py-2.5">
                     <h2 className="font-display truncate text-xl text-paper">{item.common}</h2>
                     <p className="label mt-1 truncate text-[8px] text-paper/45">{item.binomial || item.photo.by}</p>
                   </div>

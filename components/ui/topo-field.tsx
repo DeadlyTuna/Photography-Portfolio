@@ -11,8 +11,8 @@
  * crosshair follows it with a live elevation readout. A faint survey grid and edge
  * coordinates sit underneath.
  *
- * Cheap enough to run full-screen: ~16px cells, only the levels that cross each cell are
- * tested, 30fps cap, paused off-screen / in hidden tabs, one static frame for reduced motion.
+ * Cheap enough to run full-screen: ~22px cells, two noise octaves, only the levels that cross
+ * each cell are tested, 24fps cap, pixel ratio capped at 1.25, paused off-screen / in hidden tabs, one static frame for reduced motion.
  */
 
 import * as React from "react"
@@ -108,7 +108,7 @@ export function TopoField({
 
     const noise = makeNoise(seed)
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    const CELL = 16
+    const CELL = 22
     let W = 0
     let H = 0
     let dpr = 1
@@ -126,7 +126,7 @@ export function TopoField({
       const r = host.getBoundingClientRect()
       W = Math.max(1, Math.round(r.width))
       H = Math.max(1, Math.round(r.height))
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      dpr = Math.min(window.devicePixelRatio || 1, 1.25)
       cv.width = Math.round(W * dpr)
       cv.height = Math.round(H * dpr)
       cv.style.width = W + "px"
@@ -141,11 +141,11 @@ export function TopoField({
       const ny = y / scale
       let h = noise(nx + t * 0.05, ny - t * 0.035) * 1.0
       h += noise(nx * 2.1 - t * 0.04, ny * 2.1 + 7.3) * 0.45
-      h += noise(nx * 4.3 + 3.1, ny * 4.3 - t * 0.06) * 0.18
       if (ptr.s > 0.001) {
         const dx = x - ptr.x
         const dy = y - ptr.y
-        h += ptr.s * 0.95 * Math.exp(-(dx * dx + dy * dy) / (2 * 150 * 150))
+        const d2 = dx * dx + dy * dy
+        if (d2 < 202500) h += ptr.s * 0.95 * Math.exp(-d2 / (2 * 150 * 150))
       }
       return h
     }
@@ -293,7 +293,7 @@ export function TopoField({
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop)
       if (!visible || document.hidden) return
-      if (now - last < 1000 / 30) return
+      if (now - last < 1000 / 24) return
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       t += dt * speed
@@ -353,12 +353,7 @@ export function TopoField({
             className="label absolute left-0 top-0 whitespace-nowrap text-[9px] opacity-0 will-change-transform"
             style={{ color: accent }}
           />
-          <div className="label absolute inset-x-0 top-3 flex justify-between px-4 text-[9px] text-paper/25">
-            {["00°", "15°", "30°", "45°", "60°", "75°", "90°"].map((d) => (
-              <span key={d}>{d}</span>
-            ))}
-          </div>
-          <div className="label absolute inset-y-0 left-3 flex flex-col justify-between py-10 text-[9px] text-paper/25 [writing-mode:vertical-rl]">
+          <div className="label absolute inset-y-0 left-3 hidden flex-col justify-between py-28 text-[9px] text-paper/25 [writing-mode:vertical-rl] md:flex">
             {["N 10", "N 20", "N 30", "N 40"].map((d) => (
               <span key={d}>{d}</span>
             ))}

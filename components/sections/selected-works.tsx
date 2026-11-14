@@ -29,7 +29,7 @@ function Card({ i, progress, onOpen, compact }: { i: number; progress?: MotionVa
   const shift = useTransform(progress ?? zero, [0, 1], reduce ? ["0%", "0%"] : ["6%", "-6%"])
   const ratio = s.photo.w / s.photo.h
   return (
-    <figure className="group relative shrink-0 snap-center" style={{ height: compact ? "52svh" : "62svh", aspectRatio: String(ratio) }}>
+    <figure className="group relative shrink-0 snap-center" style={{ height: compact ? "min(52svh, 420px)" : "min(60svh, calc(100svh - 230px))", aspectRatio: String(ratio) }}>
       <button
         type="button"
         onClick={() => onOpen(i)}
@@ -68,7 +68,7 @@ function Header() {
     <div className="flex w-[min(86vw,30rem)] shrink-0 flex-col justify-between self-stretch py-2 pr-6">
       <div>
         <p className="label text-paper/50">
-          <span className="text-signal">02</span> — Selected works
+          <span className="text-signal">01</span> — Selected works
         </p>
         <h2 className="font-display mt-6 text-[clamp(4rem,9vw,9rem)] text-paper">
           {["Selected", "frames"].map((w, i) => (
@@ -122,10 +122,14 @@ export function SelectedWorks() {
   }, [narrow])
 
   const { scrollYProgress } = useScroll({ target: section, offset: ["start start", "end end"] })
-  const smooth = useSpring(scrollYProgress, { stiffness: 120, damping: 30, mass: 0.4 })
+  // Lenis already smooths the scroll; a second spring on top just adds lag.
+  const smooth = scrollYProgress
   const x = useTransform(smooth, [0, 1], [0, -dist])
-  const [pct, setPct] = React.useState(0)
-  useMotionValueEvent(smooth, "change", (v) => setPct(Math.round(v * 100)))
+  // Written straight to the DOM — no React re-render per scroll frame.
+  const pctRef = React.useRef<HTMLSpanElement>(null)
+  useMotionValueEvent(smooth, "change", (v) => {
+    if (pctRef.current) pctRef.current.textContent = String(Math.round(v * 100)).padStart(3, "0") + "%"
+  })
 
   if (narrow) {
     return (
@@ -146,7 +150,7 @@ export function SelectedWorks() {
   return (
     <section ref={section} id="selected" className="relative h-[440vh] border-t border-hair">
       <div className="sticky top-0 flex h-svh flex-col justify-center overflow-hidden">
-        <motion.div ref={track} className="flex items-center gap-10 pl-8 pr-[8vw] pt-10" style={{ x }}>
+        <motion.div ref={track} className="flex items-center gap-10 pl-8 pr-[8vw] pt-10 will-change-transform" style={{ x }}>
           <Header />
           {SELECTED.map((_, i) => (
             <Card key={i} i={i} progress={smooth} onOpen={setLb} />
@@ -154,7 +158,9 @@ export function SelectedWorks() {
         </motion.div>
 
         <div className="absolute inset-x-8 bottom-6 flex items-center gap-6">
-          <span className="label tabular-nums text-paper/50">{String(pct).padStart(3, "0")}%</span>
+          <span ref={pctRef} className="label tabular-nums text-paper/50">
+            000%
+          </span>
           <div className="relative h-px flex-1 bg-hair">
             <motion.div className="absolute inset-y-0 left-0 w-full origin-left bg-signal" style={{ scaleX: smooth }} />
           </div>

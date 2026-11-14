@@ -52,9 +52,10 @@ export function Contact() {
             <a
               href={`mailto:${SITE.email}`}
               data-cursor="Mail"
-              className="font-display group relative mt-3 inline-block break-all text-[clamp(1.8rem,4.4vw,4.6rem)] text-paper transition hover:text-signal focus-visible:text-signal focus-visible:outline-none"
+              className="font-display group relative mt-3 inline-block text-[clamp(1.6rem,3.8vw,4.4rem)] text-paper transition hover:text-signal focus-visible:text-signal focus-visible:outline-none"
             >
-              {SITE.email}
+              {SITE.email.split("@")[0]}
+              <wbr />@{SITE.email.split("@")[1]}
               <span className="absolute -bottom-1 left-0 h-[3px] w-full origin-left scale-x-0 bg-signal transition-transform duration-500 group-hover:scale-x-100" />
             </a>
             <div className="mt-10 flex flex-wrap gap-3">
@@ -69,7 +70,7 @@ export function Contact() {
                 onClick={() => scrollToTarget(0)}
                 className="label h-12 rounded-none border-hair bg-transparent px-7 text-paper hover:border-paper hover:bg-paper hover:text-ink"
               >
-                <ArrowUp /> Rewind to the cameras
+                <ArrowUp /> Rewind to the top
               </Button>
             </div>
           </div>
@@ -89,7 +90,7 @@ export function Contact() {
           </dl>
         </div>
 
-        <div className="mx-auto mt-24 flex max-w-[1600px] flex-col gap-3 border-t border-hair px-4 py-6 sm:px-8 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto mt-24 flex max-w-[1600px] flex-col gap-3 border-t border-hair px-4 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
           <p className="label text-paper/60">
             © {SITE.year} {SITE.first} {SITE.last}
           </p>

@@ -18,6 +18,16 @@ export const viewport: Viewport = { themeColor: "#060607" }
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} dark`}>
+      <head>
+        {/* The intro plays from the top: don't let the browser restore an old scroll position. */}
+        <script dangerouslySetInnerHTML={{ __html: "history.scrollRestoration='manual';scrollTo(0,0)" }} />
+        {/* Warm up Sketchfab before React even mounts: the 3D models are the slowest thing on the page. */}
+        <link rel="preconnect" href="https://sketchfab.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://static.sketchfab.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://media.sketchfab.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://media.sketchfab.com" />
+        <link rel="preload" as="script" href="https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js" />
+      </head>
       <body className="min-h-svh">
         {children}
         <div className="grain" aria-hidden />

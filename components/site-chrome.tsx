@@ -9,11 +9,11 @@ import { SITE } from "@/lib/site"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
-  { n: "01", label: "Cameras", href: "#cameras" },
-  { n: "02", label: "Selected", href: "#selected" },
-  { n: "03", label: "Places", href: "#places" },
+  { n: "01", label: "Selected", href: "#selected" },
+  { n: "02", label: "Places", href: "#places" },
+  { n: "03", label: "Cameras", href: "#cameras" },
   { n: "04", label: "About", href: "#about" },
-  { n: "05", label: "Contact", href: "#contact" },
+  { n: "06", label: "Contact", href: "#contact" },
 ]
 
 function Clock() {
@@ -41,7 +41,7 @@ function Clock() {
 function Nav({ onMenu }: { onMenu: () => void }) {
   const [scrolled, setScrolled] = React.useState(false)
   React.useEffect(() => {
-    const on = () => setScrolled(window.scrollY > window.innerHeight * 2.4)
+    const on = () => setScrolled(window.scrollY > window.innerHeight * 0.8)
     on()
     window.addEventListener("scroll", on, { passive: true })
     return () => window.removeEventListener("scroll", on)
@@ -51,7 +51,7 @@ function Nav({ onMenu }: { onMenu: () => void }) {
     <header
       className={cn(
         "fixed inset-x-0 top-0 z-[60] flex h-16 items-center justify-between border-b px-4 transition-[background-color,border-color,opacity] duration-500 sm:px-8 [[data-locked=true]_&]:pointer-events-none [[data-locked=true]_&]:opacity-0",
-        scrolled ? "border-hair bg-ink/80 backdrop-blur-md" : "border-transparent bg-transparent",
+        scrolled ? "border-hair bg-ink/95" : "border-transparent bg-transparent",
       )}
     >
       <button
@@ -198,17 +198,24 @@ function Cursor() {
     if (reduce || !window.matchMedia("(pointer: fine)").matches) return
     setEnabled(true)
     document.documentElement.classList.add("has-cursor")
+    let lastTarget: HTMLElement | null = null
     const move = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return
       x.set(e.clientX)
       y.set(e.clientY)
-      setHidden(false)
+      // Only touch React state when something actually changed (pointermove fires a lot).
       const t = e.target as HTMLElement | null
+      if (t === lastTarget) return
+      lastTarget = t
+      setHidden(false)
       const tagged = t?.closest?.("[data-cursor]") as HTMLElement | null
       setLabel(tagged?.dataset.cursor ?? null)
       setHot(!!t?.closest?.("a,button,[role=button],input,textarea,select"))
     }
-    const leave = () => setHidden(true)
+    const leave = () => {
+      lastTarget = null
+      setHidden(true)
+    }
     window.addEventListener("pointermove", move, { passive: true })
     document.documentElement.addEventListener("pointerleave", leave)
     return () => {
