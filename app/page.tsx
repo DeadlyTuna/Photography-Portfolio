@@ -4,7 +4,7 @@ import { SelectedWorks } from "@/components/sections/selected-works"
 import { Places } from "@/components/sections/places"
 import { Experience } from "@/components/experience"
 import { About } from "@/components/sections/about"
-import { PhoneRoll } from "@/components/sections/phone-roll"
+import { PhotoGallery } from "@/components/sections/photo-gallery"
 import { Contact } from "@/components/sections/contact"
 
 /*
@@ -22,7 +22,7 @@ export default function Home() {
         <Places />
         <Experience />
         <About />
-        <PhoneRoll />
+        <PhotoGallery />
       </main>
       <Contact />
     </>

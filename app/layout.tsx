@@ -1,3 +1,4 @@
+import Script from "next/script"
 import type { Metadata, Viewport } from "next"
 import { Anton, Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} dark`}>
       <head>
         {/* The intro plays from the top: don't let the browser restore an old scroll position. */}
-        <script dangerouslySetInnerHTML={{ __html: "history.scrollRestoration='manual';scrollTo(0,0)" }} />
+        <Script id="scroll-top" strategy="beforeInteractive">{"history.scrollRestoration='manual';scrollTo(0,0)"}</Script>
         {/* Warm up Sketchfab before React even mounts: the 3D models are the slowest thing on the page. */}
         <link rel="preconnect" href="https://sketchfab.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://static.sketchfab.com" crossOrigin="anonymous" />

@@ -90,13 +90,18 @@ export function Hero() {
   const imgY = useTransform(scrollYProgress, [0, 1], ["0%", "18%"])
   const nameY = useTransform(scrollYProgress, [0, 1], ["0%", "45%"])
   const fade = useTransform(scrollYProgress, [0, 0.7], [1, 0])
+  // Scroll-linked styles only after mount: the first scroll reading in the browser can differ
+  // from the server's (always top-of-page), which caused a hydration mismatch.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
+  const fadeStyle = mounted ? { opacity: fade } : undefined
 
   const s = REEL[i]
 
   return (
     <section ref={ref} id="top" className="relative h-svh min-h-[560px] overflow-hidden bg-ink">
       {/* full-bleed reel */}
-      <motion.div className="absolute inset-0" style={{ y: imgY }}>
+      <motion.div className="absolute inset-0" style={mounted ? { y: imgY } : undefined}>
         <AnimatePresence initial={false}>
           <motion.img
             key={s.photo.src}
@@ -121,7 +126,7 @@ export function Hero() {
       </div>
 
       {/* top meta */}
-      <motion.div className="absolute inset-x-0 top-[84px] z-10 flex justify-between gap-6 px-6 sm:px-12" style={{ opacity: fade }}>
+      <motion.div className="absolute inset-x-0 top-[84px] z-10 flex justify-between gap-6 px-6 sm:px-12" style={fadeStyle}>
         <motion.p
           className="hidden max-w-xs text-sm leading-relaxed text-paper/75 sm:block"
           initial={{ opacity: 0, y: 10 }}
@@ -146,7 +151,7 @@ export function Hero() {
       {/* now showing */}
       <motion.div
         className="absolute right-6 top-1/2 z-10 hidden w-60 -translate-y-1/2 sm:right-12 md:block"
-        style={{ opacity: fade }}
+        style={fadeStyle}
         initial={{ opacity: 0 }}
         animate={open ? { opacity: 1 } : {}}
         transition={{ delay: 1.6 }}
@@ -190,7 +195,7 @@ export function Hero() {
       </motion.div>
 
       {/* the giant name */}
-      <motion.div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-6 sm:px-6" style={{ y: nameY, opacity: fade }}>
+      <motion.div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-6 sm:px-6" style={mounted ? { y: nameY, opacity: fade } : undefined}>
         <div className="label mb-2 flex items-end justify-between px-3 text-paper/55 sm:px-6">
           <motion.span initial={{ opacity: 0 }} animate={open ? { opacity: 1 } : {}} transition={{ delay: 1 }}>
             Field notes — {SITE.since}/{SITE.year}
@@ -210,7 +215,7 @@ export function Hero() {
             animate={open ? { opacity: 1 } : {}}
             transition={{ delay: 1.6 }}
           >
-            Move your cursor over the lines to raise the terrain.
+            Scroll down to the selected works.
           </motion.p>
         </div>
       </motion.div>
