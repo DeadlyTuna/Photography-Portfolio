@@ -42,6 +42,8 @@ export type InteractiveGlobeExplorerProps = {
   locations: GlobeLocation[];
   initialLocationId?: string;
   globeTextureUrl?: string;
+  /** Height map that gives mountains a bit of relief under the light. */
+  bumpTextureUrl?: string;
   /** Colour of the pins and pulse rings (three.js can't read CSS variables). */
   accentColor?: string;
   /** Called when the photo in the details card is clicked. */
@@ -80,7 +82,8 @@ function useElementSize(ref: React.RefObject<HTMLElement | null>) {
 export function InteractiveGlobeExplorer({
   locations,
   initialLocationId,
-  globeTextureUrl = "/textures/earth-dark.jpg",
+  globeTextureUrl = "/textures/earth-blue-marble.jpg",
+  bumpTextureUrl = "/textures/earth-topology.png",
   accentColor = "#c6ff3d",
   onOpenImage,
   className,
@@ -325,16 +328,17 @@ export function InteractiveGlobeExplorer({
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-ink via-ink/90 to-transparent md:hidden" />
         <div className="pointer-events-auto relative">
           <div className="absolute inset-0 -z-10">
-            <div className="absolute left-1/2 top-1/2 h-[80%] w-[80%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(198,255,61,0.08),transparent)]" />
+            <div className="absolute left-1/2 top-1/2 h-[80%] w-[80%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(95,180,255,0.12),transparent)]" />
           </div>
           <Globe
             ref={globeRef}
             width={globeSize}
             height={globeSize}
             globeImageUrl={globeTextureUrl}
+            bumpImageUrl={bumpTextureUrl}
             backgroundColor="rgba(0,0,0,0)"
-            atmosphereColor="#9fb3c8"
-            atmosphereAltitude={0.14}
+            atmosphereColor="#5fb4ff"
+            atmosphereAltitude={0.18}
             pointsData={locations}
             pointLat="lat"
             pointLng="lng"
